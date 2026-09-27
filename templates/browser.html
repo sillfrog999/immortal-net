@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Browser - ImmortalNet{% endblock %}
+{% block content %}
+<div class="browser-chrome">
+    <div class="browser-toolbar">
+        <button id="btn-back" class="browser-btn" title="Back">&larr;</button>
+        <button id="btn-forward" class="browser-btn" title="Forward">&rarr;</button>
+        <button id="btn-reload" class="browser-btn" title="Reload">&#8635;</button>
+        <input id="address-bar" type="text" placeholder="e.g. hien.immortalnet or hien" autocomplete="off">
+        <button id="btn-go" class="btn-small">GO</button>
+    </div>
+    <div class="browser-viewport">
+        <iframe id="site-frame" sandbox="allow-scripts allow-popups" class="site-iframe"></iframe>
+        <div id="browser-placeholder" class="browser-placeholder">
+            Type a domain above and press GO to visit an ImmortalNet website.
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/browser.js') }}"></script>
+<script>
+ImmortalBrowser.init({{ initial_domain|tojson }});
+</script>
+{% endblock %}

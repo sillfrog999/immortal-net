@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Create Website - ImmortalNet{% endblock %}
+{% block content %}
+<h1>Create Website</h1>
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+<form method="post" class="editor-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label>Website name</label>
+    <input type="text" name="title" value="{{ form.title or '' }}" required maxlength="200">
+
+    <label>Domain</label>
+    <div class="domain-input-row">
+        <input type="text" name="domain" id="domain-input" value="{{ form.domain or '' }}"
+               maxlength="32" pattern="[a-z0-9-]{1,32}" required>
+        <span class="domain-suffix">.immortalnet</span>
+    </div>
+    <small id="domain-status" class="muted"></small>
+
+    <div class="code-grid">
+        <div>
+            <label>HTML</label>
+            <textarea name="html" rows="10" spellcheck="false">{{ form.html or '<h1>Hello ImmortalNet</h1>' }}</textarea>
+        </div>
+        <div>
+            <label>CSS</label>
+            <textarea name="css" rows="10" spellcheck="false">{{ form.css or 'body {\n  background: black;\n  color: white;\n}' }}</textarea>
+        </div>
+        <div>
+            <label>JavaScript</label>
+            <textarea name="js" rows="10" spellcheck="false">{{ form.js or 'console.log("Hello");' }}</textarea>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Create Website</button>
+</form>
+
+<script>
+const input = document.getElementById('domain-input');
+const status = document.getElementById('domain-status');
+let timer = null;
+input.addEventListener('input', () => {
+    input.value = input.value.toLowerCase();
+    clearTimeout(timer);
+    const domain = input.value.trim();
+    if (!domain) { status.textContent = ''; return; }
+    timer = setTimeout(async () => {
+        try {
+            const res = await fetch(`/api/check-domain?domain=${encodeURIComponent(domain)}`);
+            const data = await res.json();
+            status.textContent = data.available ? `✓ ${domain}.immortalnet is available` : (data.error || 'Not available');
+            status.className = data.available ? 'success' : 'error-text';
+        } catch (e) { /* ignore network hiccups */ }
+    }, 350);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Login - ImmortalNet{% endblock %}
+{% block content %}
+<div class="auth-box">
+    <h1>Login</h1>
+    {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Username</label>
+        <input type="text" name="username" required autofocus>
+        <label>Password</label>
+        <input type="password" name="password" required>
+        <button type="submit" class="btn btn-primary full-width">Login</button>
+    </form>
+    <p class="muted">No account yet? <a href="{{ url_for('register') }}">Register</a></p>
+</div>
+{% endblock %}

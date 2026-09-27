@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}ImmortalNet - Build your own corner of the Internet{% endblock %}
+{% block content %}
+<section class="hero">
+    <div class="hero-logo">IMMORTAL<span>NET</span></div>
+    <h1>Build your own corner of the Internet.</h1>
+    <p class="subtext">
+        Create a website.<br>
+        Choose your own domain.<br>
+        Share it with everyone.
+    </p>
+    <div class="hero-actions">
+        <a href="{{ url_for('create') if current_user() else url_for('register') }}" class="btn btn-primary">Create Website</a>
+        <a href="{{ url_for('browser_ui') }}" class="btn btn-secondary">Open Browser</a>
+    </div>
+</section>
+
+<section class="latest">
+    <h2>Latest Websites</h2>
+    {% if latest %}
+    <div class="site-grid">
+        {% for site in latest %}
+        <a href="{{ url_for('browser_ui', domain=site.domain) }}" class="site-card">
+            <span class="site-domain">{{ site.domain }}.immortalnet</span>
+            <span class="site-title">{{ site.title }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No websites yet. Be the first to create one.</p>
+    {% endif %}
+</section>
+{% endblock %}

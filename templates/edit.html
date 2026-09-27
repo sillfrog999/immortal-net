@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ site.domain }}.immortalnet - ImmortalNet{% endblock %}
+{% block content %}
+<h1>Edit <span class="mono">{{ site.domain }}.immortalnet</span></h1>
+<p><a href="{{ url_for('view_site', domain=site.domain) }}" target="_blank" rel="noopener">Open live site &rarr;</a></p>
+{% if saved %}<div class="alert alert-success">Saved.</div>{% endif %}
+
+<form method="post" class="editor-form" id="edit-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label>Website name</label>
+    <input type="text" name="title" value="{{ site.title }}" required maxlength="200">
+
+    <div class="editor-layout">
+        <div class="code-grid vertical">
+            <div>
+                <label>HTML</label>
+                <textarea name="html" id="html-input" rows="8" spellcheck="false">{{ site.html }}</textarea>
+            </div>
+            <div>
+                <label>CSS</label>
+                <textarea name="css" id="css-input" rows="8" spellcheck="false">{{ site.css }}</textarea>
+            </div>
+            <div>
+                <label>JavaScript</label>
+                <textarea name="js" id="js-input" rows="8" spellcheck="false">{{ site.js }}</textarea>
+            </div>
+        </div>
+        <div class="preview-pane">
+            <label>Preview</label>
+            <iframe id="preview-frame" sandbox="allow-scripts" class="preview-iframe"></iframe>
+            <button type="button" id="refresh-preview-btn" class="btn-small">Refresh Preview</button>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save</button>
+</form>
+
+<script>
+function buildDoc(html, css, js) {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${css}</style></head>`
+         + `<body>${html}<script>${js}<\/script></body></html>`;
+}
+function refreshPreview() {
+    const html = document.getElementById('html-input').value;
+    const css = document.getElementById('css-input').value;
+    const js = document.getElementById('js-input').value;
+    document.getElementById('preview-frame').srcdoc = buildDoc(html, css, js);
+}
+document.getElementById('refresh-preview-btn').addEventListener('click', refreshPreview);
+window.addEventListener('DOMContentLoaded', refreshPreview);
+</script>
+{% endblock %}

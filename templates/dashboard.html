@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - ImmortalNet{% endblock %}
+{% block content %}
+<h1>Welcome, {{ user.username }}</h1>
+<p class="muted">{{ sites|length }} website{{ '' if sites|length == 1 else 's' }}</p>
+
+<div class="dashboard-actions">
+    <a href="{{ url_for('create') }}" class="btn btn-primary">+ Create Website</a>
+    <a href="{{ url_for('browser_ui') }}" class="btn btn-secondary">Browser</a>
+</div>
+
+<h2>Websites</h2>
+{% if sites %}
+<div class="site-list">
+    {% for site in sites %}
+    <div class="site-row">
+        <div>
+            <span class="site-domain">{{ site.domain }}.immortalnet</span>
+            <span class="site-title muted">{{ site.title }}</span>
+            {% if not site.published %}<span class="badge">unpublished</span>{% endif %}
+        </div>
+        <div class="site-row-actions">
+            <a href="{{ url_for('browser_ui', domain=site.domain) }}" class="btn-small">Open</a>
+            <a href="{{ url_for('edit_site', domain=site.domain) }}" class="btn-small">Edit</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="muted">You haven't created any websites yet.</p>
+{% endif %}
+{% endblock %}
