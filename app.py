@@ -379,15 +379,19 @@ def view_site(domain):
         "site.html", title=site["title"], html=site["html"], css=site["css"], js=site["js"]
     )
     resp = app.response_class(page, mimetype="text/html")
-    # Untrusted content: lock down what it can do, and forbid framing by
-    # any origin outside our own app.
+    # Untrusted content: the real isolation boundary is the sandboxed
+    # <iframe> it's always viewed through (see /browser and static/js/
+    # browser.js - no "allow-same-origin", so this document's JS can never
+    # read ImmortalNet's cookies/session or touch the parent page).
+    #
+    # Because a user's "website" is meant to be a real website, we do NOT
+    # lock down what it can load (images, fonts, embeds like a Spotify/
+    # YouTube <iframe>, external scripts, etc.) - that would defeat the
+    # point of the product. The one thing the CSP still enforces is
+    # frame-ancestors, so this page can only ever be framed by our own app
+    # (prevents someone else clickjacking a raw /site/<domain> URL).
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"
-    resp.headers["Content-Security-Policy"] = (
-        "default-src 'self' data:; "
-        "script-src 'unsafe-inline'; "
-        "style-src 'unsafe-inline'; "
-        "frame-ancestors 'self';"
-    )
+    resp.headers["Content-Security-Policy"] = "frame-ancestors 'self';"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     return resp
 
