@@ -21,7 +21,6 @@ from flask import (
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import db
-from backup_data import dump_all
 
 # --------------------------------------------------------------------------
 # App setup
@@ -469,7 +468,7 @@ def full_backup():
     if not expected or not sent or not secrets.compare_digest(sent, expected):
         abort(404)
     return Response(
-        json.dumps(dump_all(), indent=2, default=str), mimetype="application/json",
+        json.dumps(db.dump_all(), indent=2, default=str), mimetype="application/json",
         headers={"Content-Disposition": "attachment; filename=immortalnet_full_backup.json"},
     )
 
