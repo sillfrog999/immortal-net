@@ -8,6 +8,7 @@ See README.md for setup, deployment and a list of known limitations.
 
 import os
 import re
+import json
 import time
 import secrets
 from functools import wraps
@@ -15,11 +16,12 @@ from collections import defaultdict, deque
 
 from flask import (
     Flask, request, session, redirect, url_for, render_template,
-    abort, jsonify, g
+    abort, jsonify, g, Response
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import db
+from backup_data import dump_all
 
 # --------------------------------------------------------------------------
 # App setup
@@ -27,7 +29,7 @@ import db
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-app.config["MAX_CONTENT_LENGTH"] = 300 * 1024  # 300 KB hard cap per request
+app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024  # 1 MB hard cap per request (covers backup imports)
 
 # ----- limits (Section 10 / 18: security & sane defaults) -----------------
 MAX_CODE_LENGTH = 50_000          # max chars allowed in each of html/css/js
@@ -204,9 +206,15 @@ def register():
             conn, "INSERT INTO users (username, password_hash) VALUES (?, ?)",
             (username, password_hash)
         )
-    except Exception:
+    except db.UniqueViolation:
+        conn.rollback()
         conn.close()
         return render_template("register.html", error=f'Username "{username}" is already taken.')
+    except Exception:
+        app.logger.exception("Failed to register user %r", username)
+        conn.rollback()
+        conn.close()
+        return render_template("register.html", error="Could not create the account (server error). Please try again.")
     conn.close()
 
     session.clear()
@@ -250,6 +258,10 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    return render_dashboard()
+
+
+def render_dashboard(message=None):
     user = current_user()
     conn = db.get_connection()
     sites = db.run(
@@ -257,7 +269,7 @@ def dashboard():
         (user["id"],), fetch="all"
     )
     conn.close()
-    return render_template("dashboard.html", user=user, sites=sites)
+    return render_template("dashboard.html", user=user, sites=sites, message=message)
 
 
 @app.route("/create", methods=["GET", "POST"])
@@ -301,16 +313,29 @@ def create():
         )
 
     try:
+        # `published` is BOOLEAN on PostgreSQL and INTEGER on SQLite; passing a
+        # Python bool as a parameter works on both (a literal 1 fails on Postgres).
         db.run_insert_returning_id(
             conn,
             "INSERT INTO websites (owner_id, domain, title, html, css, js, published) "
-            "VALUES (?, ?, ?, ?, ?, ?, 1)",
-            (user["id"], domain, title, html, css, js)
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], domain, title, html, css, js, True)
         )
-    except Exception:
+    except db.UniqueViolation:
+        # Someone grabbed the domain between our check and the insert (race).
+        conn.rollback()
         conn.close()
         return render_template(
             "create.html", error=f'Domain "{domain}" is already taken.', form=request.form
+        )
+    except Exception:
+        # A real error - log it (visible in Render logs) instead of hiding it.
+        app.logger.exception("Failed to create website %r", domain)
+        conn.rollback()
+        conn.close()
+        return render_template(
+            "create.html", error="Could not save your website (server error). Please try again.",
+            form=request.form
         )
     conn.close()
     return redirect(url_for("edit_site", domain=domain))
@@ -356,6 +381,97 @@ def edit_site(domain):
     conn.close()
     return render_template("edit.html", site=site, error=None, saved=True)
 
+
+
+# --------------------------------------------------------------------------
+# Backups (so a redeploy / expired free database never means lost work)
+# --------------------------------------------------------------------------
+
+@app.route("/export")
+@login_required
+def export_my_sites():
+    """Download all of the logged-in user's websites as a JSON file."""
+    user = current_user()
+    conn = db.get_connection()
+    sites = db.run(
+        conn,
+        "SELECT domain, title, html, css, js, published FROM websites WHERE owner_id = ?",
+        (user["id"],), fetch="all",
+    )
+    conn.close()
+    payload = json.dumps({"immortalnet_export": 1, "websites": sites}, indent=2, default=str)
+    return Response(
+        payload, mimetype="application/json",
+        headers={"Content-Disposition": f"attachment; filename={user['username']}_immortalnet_backup.json"},
+    )
+
+
+@app.route("/import", methods=["POST"])
+@login_required
+@csrf_protect
+@rate_limit("import", max_calls=5, window_seconds=60)
+def import_my_sites():
+    """Re-create websites from a file made by /export. Never overwrites or deletes anything."""
+    user = current_user()
+    upload = request.files.get("file")
+    if not upload:
+        return render_dashboard("Please choose a backup file first.")
+    try:
+        data = json.loads(upload.read().decode("utf-8"))
+        items = data["websites"]
+        assert isinstance(items, list)
+    except Exception:
+        return render_dashboard("That doesn't look like a valid ImmortalNet backup file.")
+
+    conn = db.get_connection()
+    count = db.run(conn, "SELECT COUNT(*) as c FROM websites WHERE owner_id = ?", (user["id"],), fetch="one")["c"]
+    added, skipped = 0, 0
+    for item in items:
+        if not isinstance(item, dict) or count >= MAX_WEBSITES_PER_USER:
+            skipped += 1
+            continue
+        domain, err = validate_domain(str(item.get("domain", "")))
+        title = str(item.get("title", "")).strip()[:200]
+        if err or not title or db.run(conn, "SELECT id FROM websites WHERE domain = ?", (domain,), fetch="one"):
+            skipped += 1
+            continue
+        try:
+            db.run_insert_returning_id(
+                conn,
+                "INSERT INTO websites (owner_id, domain, title, html, css, js, published) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user["id"], domain, title,
+                 str(item.get("html", ""))[:MAX_CODE_LENGTH],
+                 str(item.get("css", ""))[:MAX_CODE_LENGTH],
+                 str(item.get("js", ""))[:MAX_CODE_LENGTH],
+                 True if db.IS_POSTGRES else 1),
+            )
+            added += 1
+            count += 1
+        except Exception:
+            conn.rollback()
+            skipped += 1
+    conn.close()
+    return render_dashboard(f"Import finished: {added} website(s) restored, {skipped} skipped "
+                            "(domain already taken, invalid, or site limit reached).")
+
+
+@app.route("/backup/full")
+def full_backup():
+    """
+    Whole-database backup for the site operator. Disabled unless the
+    ADMIN_TOKEN environment variable is set. Send it as a header:
+        curl -H "X-Backup-Token: <ADMIN_TOKEN>" https://YOUR-APP/backup/full -o backup.json
+    Includes password hashes - keep the file private.
+    """
+    expected = os.environ.get("ADMIN_TOKEN", "")
+    sent = request.headers.get("X-Backup-Token", "")
+    if not expected or not sent or not secrets.compare_digest(sent, expected):
+        abort(404)
+    return Response(
+        json.dumps(dump_all(), indent=2, default=str), mimetype="application/json",
+        headers={"Content-Disposition": "attachment; filename=immortalnet_full_backup.json"},
+    )
 
 # --------------------------------------------------------------------------
 # Routes: browsing published websites
