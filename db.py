@@ -25,6 +25,20 @@ IS_POSTGRES = DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith(
 if IS_POSTGRES:
     import psycopg2
     import psycopg2.extras
+    import psycopg2.errors
+elif os.environ.get("RENDER"):
+    # Render sets RENDER=true automatically. Its filesystem is wiped on every
+    # deploy/restart, so a SQLite file there would silently lose ALL data.
+    # Fail loudly instead of starting with a database that will vanish.
+    raise RuntimeError(
+        "DATABASE_URL is not set but the app is running on Render. Refusing to "
+        "use SQLite (data would be erased on every deploy). Set DATABASE_URL "
+        "to your PostgreSQL connection string."
+    )
+
+# Only THIS exception means "that unique value already exists".
+# Anything else is a real bug and must not be reported as "already taken".
+UniqueViolation = psycopg2.errors.UniqueViolation if IS_POSTGRES else sqlite3.IntegrityError
 
 SQLITE_PATH = os.environ.get("SQLITE_PATH", os.path.join(os.path.dirname(__file__), "immortalnet.db"))
 
