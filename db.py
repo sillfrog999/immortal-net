@@ -18,6 +18,7 @@ Why this exists:
 
 import os
 import sqlite3
+from datetime import datetime, timezone
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 IS_POSTGRES = DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith("postgresql://")
@@ -177,3 +178,17 @@ def init_db():
         conn.executescript(schema)
         conn.commit()
     conn.close()
+
+
+def dump_all():
+    """Return every user and website as plain dicts (used by backups)."""
+    conn = get_connection()
+    users = run(conn, "SELECT * FROM users", fetch="all")
+    websites = run(conn, "SELECT * FROM websites", fetch="all")
+    conn.close()
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "backend": "postgres" if IS_POSTGRES else "sqlite",
+        "users": users,
+        "websites": websites,
+    }
